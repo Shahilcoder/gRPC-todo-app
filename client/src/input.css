@@ -1,3 +1,752 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Unlayered on purpose, and it has to be.
+ *
+ * Tailwind's preflight puts [hidden]{display:none} in the *base* layer, so any
+ * component rule below that sets `display` — .priority-flag, .chip-row, the
+ * ghost buttons — silently beats it, and the `hidden` attribute stops working
+ * on exactly the elements the UI toggles most. Unlayered rules outrank every
+ * @layer, so this one line restores the attribute's meaning everywhere. */
+[hidden] {
+  display: none;
+}
+
+/* ===========================================================================
+   Clay tokens — see client/DESIGN.md ("Implementation Tokens").
+   ===========================================================================
+
+   Components reference var(--color-surface) and never learn which theme is
+   active; .dark overrides the same variable names rather than introducing a
+   second set. The -dark suffix exists only in DESIGN.md's front matter, where
+   the flat colors map gives no other way to express a second theme. */
+
+:root {
+  color-scheme: light;
+
+  /* surfaces + ink */
+  --color-canvas: #FAF9F8;
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #F4F2F0;
+  --color-border: #E5E1DD;
+  --color-border-interactive: #8A817A;
+  --color-ink: #1F1D1B;
+  --color-ink-muted: #5C5651;
+  --color-ink-faint: #726B65;
+
+  /* accent */
+  --color-primary: #A63D2F;
+  --color-primary-hover: #8E3427;
+  --color-primary-active: #7A2C21;
+  --color-primary-wash: #F7EAE7;
+  --color-on-primary: #FFFFFF;
+
+  /* priority + semantic */
+  --color-priority-1: #C0392B;
+  --color-priority-2: #965900;
+  --color-priority-3: #1F6FB2;
+  --color-priority-4: #726B65;
+  --color-success: #1E7A4C;
+  --color-warning: #8C5A00;
+  --color-error: #B3261E;
+
+  /* radius */
+  --rounded-none: 0px;
+  --rounded-sm: 4px;
+  --rounded-md: 8px;
+  --rounded-lg: 12px;
+  --rounded-xl: 16px;
+  --rounded-full: 9999px;
+
+  /* spacing */
+  --space-base: 4px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+  --space-gutter: 16px;
+  --space-page-margin: 24px;
+  --space-divider: 1px;
+  --space-checkbox: 20px;
+  --space-control-height: 44px;
+  --space-row-height: 48px;
+  --size-content-max: 42rem;
+  --size-sidebar: 16rem;
+
+  /* type */
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  /* elevation */
+  --shadow-raised: 0 1px 2px rgba(31, 29, 27, 0.06),
+    0 1px 3px rgba(31, 29, 27, 0.04);
+  --shadow-overlay: 0 4px 12px rgba(31, 29, 27, 0.1),
+    0 1px 3px rgba(31, 29, 27, 0.06);
+
+  /* motion */
+  --duration-state: 120ms;
+  --duration-enter: 180ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+.dark {
+  color-scheme: dark;
+
+  /* Not an inversion: surfaces get *lighter* as they come forward, because
+     raised things catch more light. The accent is lifted rather than reused —
+     saturated clay on near-black is muddy and fails contrast. */
+  --color-canvas: #1A1918;
+  --color-surface: #232120;
+  --color-surface-alt: #2C2A28;
+  --color-border: #3A3734;
+  --color-border-interactive: #807A73;
+  --color-ink: #F2EFEC;
+  --color-ink-muted: #B0A9A2;
+  --color-ink-faint: #9E9790;
+
+  --color-primary: #E8896F;
+  --color-primary-hover: #F09A82;
+  --color-primary-active: #DD7E63;
+  --color-primary-wash: #3A2620;
+  --color-on-primary: #1A1918;
+
+  --color-priority-1: #F08C7A;
+  --color-priority-2: #F0A94C;
+  --color-priority-3: #6FB6EE;
+  --color-priority-4: #9E9790;
+  --color-success: #5FCB92;
+  --color-warning: #F0B65C;
+  --color-error: #F2938B;
+}
+
+/* Every transition and animation in the app reads its duration from these two
+   variables, so zeroing them here is all it takes to honour the preference.
+   State stays legible from colour and position alone. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-state: 0ms;
+    --duration-enter: 0ms;
+  }
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* The page background transitions with the theme toggle so the switch reads
+     as one movement rather than a flash. */
+  body {
+    transition: background-color var(--duration-state) var(--ease-standard),
+      color var(--duration-state) var(--ease-standard);
+  }
+
+  ::placeholder {
+    color: var(--color-ink-faint);
+    opacity: 1;
+  }
+}
+
+/* ===========================================================================
+   Components — only what utilities cannot express.
+   ===========================================================================
+
+   Every selector below is a single class (optionally with a pseudo-class or
+   pseudo-element of its own). There are no descendant selectors anywhere in
+   this file, on purpose: two rules like `.task-row .title` and `.title--done`
+   end up fighting over specificity, and which one wins becomes a function of
+   source order rather than intent.
+
+   Parent-to-child state travels by *inherited custom property* instead. A row
+   sets --row-title-colour; the title's own rule reads it. A checkbox sets
+   --fill-scale; its fill reads it. Nothing reaches across the DOM. */
+
+@layer components {
+  /* --- Focus ------------------------------------------------------------- */
+
+  /* The one focus recipe in the system. :focus-visible only, so a pointer
+     click does not leave a ring behind, but every keyboard path shows one. */
+  .clay-focus:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  /* --- Checkbox ---------------------------------------------------------- */
+
+  /* A real <input type="checkbox"> lives inside, invisible but focusable, so
+     Space toggles natively and assistive technology gets the state for free.
+     :has(:checked) then drives the visuals with no JS class-syncing at all. */
+  .checkbox {
+    --fill-scale: 0;
+    --check-offset: 24;
+    --ring-color: var(--color-border-interactive);
+    --box-color: var(--color-surface);
+
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    /* 44px touch target, 20px of layout box: the negative margin is what
+       decouples the two, so a row can stay 48px tall while still offering the
+       full target. (44 - 20) / 2 = 12. */
+    width: var(--space-control-height);
+    height: var(--space-control-height);
+    margin: -12px;
+    border-radius: var(--rounded-full);
+    cursor: pointer;
+  }
+
+  .checkbox::before,
+  .checkbox::after {
+    content: "";
+    position: absolute;
+    width: var(--space-checkbox);
+    height: var(--space-checkbox);
+    border-radius: var(--rounded-full);
+  }
+
+  /* The ring. Carried as an inset box-shadow rather than a border so it does
+     not participate in layout. */
+  .checkbox::before {
+    background-color: var(--box-color);
+    box-shadow: inset 0 0 0 2px var(--ring-color);
+    transition: box-shadow var(--duration-state) var(--ease-standard),
+      background-color var(--duration-state) var(--ease-standard);
+  }
+
+  /* The fill: scales from the centre over 120ms. */
+  .checkbox::after {
+    background-color: var(--color-primary);
+    transform: scale(var(--fill-scale));
+    transition: transform var(--duration-state) var(--ease-standard);
+  }
+
+  .checkbox:hover {
+    --box-color: var(--color-surface-alt);
+    --ring-color: var(--color-ink-muted);
+  }
+
+  .checkbox:has(:checked) {
+    --fill-scale: 1;
+    --check-offset: 0;
+  }
+
+  /* 2px primary ring at 2px offset, hugging the 20px circle rather than the
+     44px hit area — hence a layered box-shadow instead of an outline. */
+  .checkbox:has(:focus-visible)::before {
+    box-shadow: inset 0 0 0 2px var(--ring-color),
+      0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary);
+  }
+
+  .checkbox__input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    appearance: none;
+    cursor: pointer;
+  }
+
+  /* The checkmark draws over the 80ms *after* the fill lands: 120ms + 80ms is
+     the app's one moment of expressive motion, and it is 200ms long. */
+  .checkbox__check {
+    position: relative;
+    z-index: 1;
+    width: 12px;
+    height: 12px;
+    fill: none;
+    stroke: var(--color-on-primary);
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 24;
+    stroke-dashoffset: var(--check-offset);
+    transition: stroke-dashoffset 80ms var(--ease-standard) var(--duration-state);
+  }
+
+  /* --- Task row ---------------------------------------------------------- */
+
+  .task-row {
+    /* --row-title-color is deliberately *not* declared here. Declaring it
+       empty would make var(--row-title-color, …) resolve to nothing rather
+       than fall through to the title's own colour; leaving it undeclared keeps
+       it guaranteed-invalid, which is what makes the fallback chain work. */
+    --action-opacity: 0;
+
+    display: flex;
+    align-items: center;
+    /* Wrapping is what resolves the row's one internal tension: the design
+       wants a 48px row with a one-line truncated title, *and* chips that wrap
+       rather than truncate. Both hold if the row is allowed to grow — title
+       and controls on line 1, chips on line 2, and only when there are any. An
+       unlabelled row is exactly 48px, so the common case keeps its density. */
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    min-height: var(--space-row-height);
+    /* A concrete max-height so .row-leave has something to animate *from*;
+       from `none` a max-height transition does not run. Two lines of chips sit
+       far under this. */
+    max-height: 8rem;
+    padding: var(--space-md);
+    background-color: var(--color-surface);
+    border-radius: var(--rounded-md);
+    transition: background-color var(--duration-state) var(--ease-standard);
+  }
+
+  /* Hover is a colour change, never a transform: translating 48px rows in a
+     long list costs reflow and communicates nothing. */
+  .task-row:hover {
+    background-color: var(--color-surface-alt);
+    --action-opacity: 1;
+  }
+
+  /* Keyboard users get the row actions too — without this, tabbing to a
+     delete button you cannot see is the whole of the experience. */
+  .task-row:focus-within {
+    --action-opacity: 1;
+  }
+
+  .task-row--pending {
+    --row-title-color: var(--color-warning);
+  }
+
+  .task-row--error {
+    --row-title-color: var(--color-error);
+  }
+
+  /* The 180ms collapse-and-fade on delete: the one layout animation the design
+     sanctions, because a row vanishing instantly makes the list appear to
+     jump. */
+  .row-leave {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-height var(--duration-enter) var(--ease-standard),
+      padding var(--duration-enter) var(--ease-standard),
+      opacity var(--duration-enter) var(--ease-standard);
+  }
+
+  .row-enter {
+    animation: row-enter var(--duration-enter) var(--ease-standard);
+  }
+
+  /* --- Task title -------------------------------------------------------- */
+
+  /* A <button>, because it opens the inline editor. Row-level state wins over
+     the element's own: a pending row shows `warning` even if the task is also
+     complete, since "in flight" is the more urgent fact. */
+  .task-title {
+    --strike: 0;
+
+    /* flex-basis 0, so the button never contributes to the wrap decision.
+       This matters because the row is a wrapping flex container, and line
+       breaking happens *before* shrinking: an `auto` basis lets a long title
+       push the timestamp and delete action onto a second line instead of
+       truncating. The text itself is sized by .task-title__text inside. */
+    flex: 1 1 0;
+    min-width: 0;
+    text-align: left;
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--row-title-color, var(--title-color, inherit));
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: text;
+    border-radius: var(--rounded-sm);
+    transition: color var(--duration-state) var(--ease-standard);
+  }
+
+  /* Sized to the text rather than to the button, so the strikethrough ends
+     where the title ends instead of running to the trailing edge of the row.
+     Truncation lives here too, for the same reason. */
+  .task-title__text {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
+
+  /* The strikethrough draws left-to-right rather than appearing: a hairline
+     pseudo-element scaled on X from its left edge. --strike is set by
+     .task-title--done on the parent and inherits down to here. */
+  .task-title__text::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 55%;
+    height: 1px;
+    background-color: currentColor;
+    transform: scaleX(var(--strike));
+    transform-origin: left;
+    transition: transform var(--duration-state) var(--ease-standard);
+  }
+
+  .task-title--done {
+    --strike: 1;
+    --title-color: var(--color-ink-faint);
+  }
+
+  /* The inline editor that replaces the title in place. */
+  .title-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--color-ink);
+    background-color: var(--color-surface);
+    border: 0;
+    padding: 0;
+    outline: none;
+  }
+
+  /* --- Row actions ------------------------------------------------------- */
+
+  /* Revealed on hover or focus above 640px, always visible below it. Opacity
+     rather than display so the row's width never changes as the pointer moves
+     across the list. */
+  .row-action {
+    flex: none;
+    opacity: var(--action-opacity);
+    /* Same decoupling as the checkbox: the button keeps its 44px target while
+       contributing only 24px to the row's content box, so a row action does
+       not push the row from 48px to 68px. (44 - 24) / 2 = 10. */
+    margin-top: -10px;
+    margin-bottom: -10px;
+    transition: opacity var(--duration-state) var(--ease-standard);
+  }
+
+  /* An action the user must be able to find without hovering — the retry on a
+     failed row is useless if it is invisible. */
+  .row-action--always {
+    opacity: 1;
+  }
+
+  /* There is no hover on touch, so nothing below the mobile breakpoint may
+     depend on it. This is the most common way a dense list becomes unusable on
+     a phone. */
+  @media (max-width: 639px) {
+    .task-row {
+      --action-opacity: 1;
+    }
+  }
+
+  /* --- Buttons ----------------------------------------------------------- */
+
+  .button-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--space-control-height);
+    padding: 0 var(--space-lg);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--color-on-primary);
+    background-color: var(--color-primary);
+    border-radius: var(--rounded-md);
+    cursor: pointer;
+    transition: background-color var(--duration-state) var(--ease-standard);
+  }
+
+  .button-primary:hover {
+    background-color: var(--color-primary-hover);
+  }
+
+  .button-primary:active {
+    background-color: var(--color-primary-active);
+  }
+
+  .button-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--space-control-height);
+    padding: 0 var(--space-lg);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+    color: var(--color-ink);
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border-interactive);
+    border-radius: var(--rounded-md);
+    cursor: pointer;
+    transition: background-color var(--duration-state) var(--ease-standard);
+  }
+
+  .button-secondary:hover {
+    background-color: var(--color-surface-alt);
+  }
+
+  .button-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--space-control-height);
+    min-width: var(--space-control-height);
+    padding: var(--space-sm);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+    color: var(--color-ink-muted);
+    background-color: transparent;
+    border-radius: var(--rounded-md);
+    cursor: pointer;
+    transition: background-color var(--duration-state) var(--ease-standard),
+      color var(--duration-state) var(--ease-standard);
+  }
+
+  .button-ghost:hover {
+    background-color: var(--color-surface-alt);
+    color: var(--color-ink);
+  }
+
+  /* The destructive ghost. Destructive actions are never button-primary: a
+     filled red button invites the click it is warning about.
+
+     Background is transparent rather than the token's literal `surface`
+     because this button sits *on* a row — painting it opaque would leave a
+     white patch behind once the row hovers to surface-alt. */
+  .button-ghost-danger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--space-control-height);
+    min-width: var(--space-control-height);
+    padding: var(--space-sm);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+    color: var(--color-error);
+    background-color: transparent;
+    border-radius: var(--rounded-md);
+    cursor: pointer;
+  }
+
+  .button-ghost-danger:hover {
+    text-decoration: underline;
+  }
+
+  /* --- Text input -------------------------------------------------------- */
+
+  .text-input {
+    width: 100%;
+    min-height: var(--space-control-height);
+    padding: 0 var(--space-md);
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-ink);
+    background-color: var(--color-surface);
+    /* border-interactive, not border: this is a control boundary and owes 3:1,
+       where a decorative divider does not. */
+    border: 1px solid var(--color-border-interactive);
+    border-radius: var(--rounded-md);
+    transition: border-color var(--duration-state) var(--ease-standard),
+      box-shadow var(--duration-state) var(--ease-standard);
+  }
+
+  /* Focus swaps the border for a 2px primary ring: 1px border plus a 1px inset
+     shadow, so the control does not change size. */
+  .text-input:focus-visible {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: inset 0 0 0 1px var(--color-primary);
+  }
+
+  /* The ~1s confirmation after a successful create. */
+  .text-input--success {
+    border-color: var(--color-success);
+    box-shadow: inset 0 0 0 1px var(--color-success);
+  }
+
+  /* --- Priority flag ----------------------------------------------------- */
+
+  /* Colour is reinforcement, never the signal: the glyph always ships beside a
+     visible P1/P2/P3 label and an aria-label. Four hues is a usable ramp for
+     most people and no ramp at all for someone who cannot separate them.
+     Tier 4 ("none") renders nothing — the row simply omits this element. */
+  .priority-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex: none;
+    padding: 2px var(--space-xs);
+    border-radius: var(--rounded-sm);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+    color: var(--flag-color, var(--color-priority-4));
+  }
+
+  .priority-flag--1 { --flag-color: var(--color-priority-1); }
+  .priority-flag--2 { --flag-color: var(--color-priority-2); }
+  .priority-flag--3 { --flag-color: var(--color-priority-3); }
+
+  .priority-flag__glyph {
+    width: var(--space-lg);
+    height: var(--space-lg);
+    fill: currentColor;
+  }
+
+  /* --- Label chip -------------------------------------------------------- */
+
+  /* A pill, which is what distinguishes a soft piece of removable metadata
+     from an 8px-radius button that performs an action. */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    max-width: 12rem;
+    padding: 2px var(--space-sm);
+    border-radius: var(--rounded-full);
+    background-color: var(--color-primary-wash);
+    color: var(--color-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The +N overflow chip. Muted, because it is a count rather than a label. */
+  .chip--overflow {
+    background-color: var(--color-surface-alt);
+    color: var(--color-ink-muted);
+  }
+
+  /* Chips live on their own line so a labelled row can grow past 48px while an
+     unlabelled one — the common case — stays exactly 48px. */
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    /* Full width so it always wraps onto its own line, indented to line up
+       under the title rather than under the checkbox. */
+    width: 100%;
+    padding-left: calc(var(--space-checkbox) + var(--space-sm));
+  }
+
+  /* --- Segmented control (priority picker) ------------------------------- */
+
+  .segmented {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    border: 0;
+    padding: 0;
+    margin: 0;
+  }
+
+  /* Real radio inputs inside, so arrow-key navigation within the group is the
+     browser's job rather than ours. */
+  .segment {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    min-height: var(--space-control-height);
+    padding: 0 var(--space-md);
+    border-radius: var(--rounded-md);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+    color: var(--color-ink-muted);
+    cursor: pointer;
+    transition: background-color var(--duration-state) var(--ease-standard),
+      color var(--duration-state) var(--ease-standard);
+  }
+
+  .segment:hover {
+    background-color: var(--color-surface-alt);
+    color: var(--color-ink);
+  }
+
+  .segment:has(:checked) {
+    background-color: var(--color-primary-wash);
+    color: var(--color-primary);
+  }
+
+  .segment:has(:focus-visible) {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  .segment__input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    appearance: none;
+    cursor: pointer;
+  }
+
+  /* --- Zero-row states --------------------------------------------------- */
+
+  /* One panel shape for all three zero-row cases. Which one is showing is a
+     matter of copy, not of styling — including the failed-to-load case, which
+     is an error state and must not be dressed as an empty one. */
+  .state-panel {
+    padding: var(--space-3xl) var(--space-xl);
+    text-align: center;
+    background-color: var(--color-canvas);
+    border-radius: var(--rounded-xl);
+  }
+
+  /* --- Numerics ---------------------------------------------------------- */
+
+  /* Tabular figures for anything numeric sitting in a column. A column of
+     timestamps that shifts as the digits change is a small, constant
+     irritation; tnum fixes it. */
+  .num {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+    font-feature-settings: "tnum" 1;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes row-enter {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 8rem;
+  }
+}

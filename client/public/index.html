@@ -3,39 +3,150 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>gRPC Todo</title>
+  <meta name="color-scheme" content="light dark" />
+  <title>Todos</title>
+
+  <!--
+    Blocking, inline, and before the stylesheet on purpose. Applying the theme
+    class after first paint gives every dark-mode user a white flash on every
+    page load; the only way to avoid it is to decide synchronously here.
+  -->
+  <script>
+    (function () {
+      try {
+        var stored = localStorage.getItem("clay-theme");
+        var dark =
+          stored === "dark" ||
+          (stored !== "light" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.classList.add("dark");
+      } catch (e) {
+        /* private mode, or localStorage disabled: fall back to light. */
+      }
+    })();
+  </script>
+
   <link rel="stylesheet" href="/output.css" />
 </head>
-<body class="min-h-screen bg-slate-100 text-slate-800">
-  <main class="mx-auto max-w-xl p-6">
-    <header class="mb-6">
-      <h1 class="text-3xl font-bold tracking-tight">Todos</h1>
-      <p class="text-sm text-slate-500">Browser → Express → gRPC → Go → SQLite</p>
+<body class="min-h-screen bg-canvas text-ink">
+  <main class="mx-auto max-w-content px-gutter py-xl sm:px-page-margin">
+
+    <!-- Page header: exactly one per page. -->
+    <header class="mb-xl flex items-start justify-between gap-lg">
+      <div>
+        <h1 class="text-headline-lg">Todos</h1>
+        <p class="mt-xs text-body-sm text-ink-faint">
+          Browser → Express → gRPC → Go → SQLite
+        </p>
+      </div>
+
+      <button
+        id="theme-toggle"
+        type="button"
+        class="button-ghost clay-focus"
+        aria-live="off"
+      >
+        <span id="theme-label">System</span>
+      </button>
     </header>
 
-    <form id="add-form" class="mb-6 flex gap-2">
-      <input
-        id="title"
-        type="text"
-        placeholder="What needs doing?"
-        class="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 shadow-sm
-               focus:outline-none focus:ring-2 focus:ring-indigo-400"
-        autocomplete="off"
-        required
-      />
-      <button
-        type="submit"
-        class="rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white
-               hover:bg-indigo-700 active:bg-indigo-800"
-      >
-        Add
-      </button>
+    <!-- Composer. The one button-primary on the screen. -->
+    <form id="composer" class="mb-xl" autocomplete="off">
+      <div class="flex flex-col gap-sm sm:flex-row">
+        <label class="sr-only" for="composer-title">Task title</label>
+        <input
+          id="composer-title"
+          name="title"
+          type="text"
+          class="text-input"
+          placeholder="What needs doing?"
+        />
+        <button type="submit" class="button-primary clay-focus shrink-0">
+          Add task
+        </button>
+      </div>
+
+      <!--
+        Priority is a *visible* control rather than more hidden syntax. Inline
+        #tags are an additive nicety and can afford to be discovered; priority
+        is a primary field, and a primary field that can only be set by typing
+        a secret token is not really available.
+      -->
+      <fieldset id="composer-priority" class="segmented mt-sm">
+        <legend class="sr-only">Priority</legend>
+
+        <label class="segment clay-focus">
+          <input class="segment__input" type="radio" name="priority" value="none" checked />
+          <span>None</span>
+        </label>
+        <label class="segment clay-focus">
+          <input class="segment__input" type="radio" name="priority" value="urgent" />
+          <span class="text-priority-1" aria-hidden="true">P1</span>
+          <span>Urgent</span>
+        </label>
+        <label class="segment clay-focus">
+          <input class="segment__input" type="radio" name="priority" value="high" />
+          <span class="text-priority-2" aria-hidden="true">P2</span>
+          <span>High</span>
+        </label>
+        <label class="segment clay-focus">
+          <input class="segment__input" type="radio" name="priority" value="medium" />
+          <span class="text-priority-3" aria-hidden="true">P3</span>
+          <span>Medium</span>
+        </label>
+      </fieldset>
+
+      <p id="composer-help" class="mt-sm text-body-sm text-ink-muted">
+        Type #label to tag it. Press <kbd class="num">/</kbd> to jump here.
+      </p>
+
+      <!-- Live preview of the #tags parsed out of the title as you type. -->
+      <div id="composer-chips" class="mt-sm flex flex-wrap gap-xs" hidden></div>
     </form>
 
-    <ul id="todo-list" class="space-y-2"></ul>
-    <p id="empty-state" class="hidden text-center text-slate-400">No todos yet.</p>
+    <!--
+      A flat surface panel with hairline dividers between rows — not a stack of
+      floating cards. At 48px rows, a shadow every 48px is texture, not
+      hierarchy.
+    -->
+    <ul
+      id="todo-list"
+      class="divide-y divide-hairline overflow-hidden rounded-lg bg-surface"
+      aria-label="Tasks"
+    ></ul>
+
+    <!-- Three distinct zero-row states. -->
+
+    <section id="state-empty" class="state-panel" hidden>
+      <h2 class="text-headline-md text-ink-muted">Nothing here yet</h2>
+      <p class="mt-sm text-body-sm text-ink-faint">Add your first task above.</p>
+    </section>
+
+    <section id="state-done" class="state-panel" hidden>
+      <h2 class="text-headline-md text-ink-muted">All done</h2>
+      <p class="mt-sm text-body-sm text-ink-faint">
+        Every task is complete. Add another when you're ready.
+      </p>
+    </section>
+
+    <!--
+      An error state, deliberately not dressed as an empty one. A failed list
+      load that renders "Nothing here yet" is how a broken API gets mistaken
+      for an empty database.
+    -->
+    <section id="state-error" class="state-panel" hidden>
+      <h2 class="text-headline-md text-ink-muted">Couldn't load your tasks</h2>
+      <p class="mt-sm text-body-sm text-ink-faint">
+        The server didn't respond. Check that it's running, then try again.
+      </p>
+      <button id="retry-load" type="button" class="button-secondary clay-focus mt-lg">
+        Try again
+      </button>
+    </section>
+
+    <p id="announcer" class="sr-only" role="status" aria-live="polite"></p>
   </main>
 
-  <script src="/app.js"></script>
+  <script type="module" src="/js/app.js"></script>
 </body>
 </html>

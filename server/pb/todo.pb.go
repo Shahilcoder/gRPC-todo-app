@@ -21,6 +21,66 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Priority tiers, most urgent first.
+//
+// The zero value IS the design system's tier 4. DESIGN.md calls tier 4 "None —
+// the default" and says the default state "should be silent", which is exactly
+// proto3's absent-means-zero semantics; wire values 1/2/3 then line up with
+// design tiers 1/2/3. Adding a separate PRIORITY_NONE = 4 would give two wire
+// values for one meaning, each needing canonicalising in the server, the
+// database, and every comparison.
+type Priority int32
+
+const (
+	Priority_PRIORITY_UNSPECIFIED Priority = 0 // design tier 4 — no priority; renders nothing
+	Priority_PRIORITY_URGENT      Priority = 1 // design tier 1 — do it today
+	Priority_PRIORITY_HIGH        Priority = 2 // design tier 2 — this week
+	Priority_PRIORITY_MEDIUM      Priority = 3 // design tier 3 — scheduled
+)
+
+// Enum value maps for Priority.
+var (
+	Priority_name = map[int32]string{
+		0: "PRIORITY_UNSPECIFIED",
+		1: "PRIORITY_URGENT",
+		2: "PRIORITY_HIGH",
+		3: "PRIORITY_MEDIUM",
+	}
+	Priority_value = map[string]int32{
+		"PRIORITY_UNSPECIFIED": 0,
+		"PRIORITY_URGENT":      1,
+		"PRIORITY_HIGH":        2,
+		"PRIORITY_MEDIUM":      3,
+	}
+)
+
+func (x Priority) Enum() *Priority {
+	p := new(Priority)
+	*p = x
+	return p
+}
+
+func (x Priority) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Priority) Descriptor() protoreflect.EnumDescriptor {
+	return file_todo_proto_enumTypes[0].Descriptor()
+}
+
+func (Priority) Type() protoreflect.EnumType {
+	return &file_todo_proto_enumTypes[0]
+}
+
+func (x Priority) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Priority.Descriptor instead.
+func (Priority) EnumDescriptor() ([]byte, []int) {
+	return file_todo_proto_rawDescGZIP(), []int{0}
+}
+
 type Empty struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -58,11 +118,15 @@ func (*Empty) Descriptor() ([]byte, []int) {
 }
 
 type Todo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	Completed     bool                   `protobuf:"varint,3,opt,name=completed,proto3" json:"completed,omitempty"`
-	CreatedAt     int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // unix seconds
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Title     string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Completed bool                   `protobuf:"varint,3,opt,name=completed,proto3" json:"completed,omitempty"`
+	CreatedAt int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // unix seconds
+	Priority  Priority               `protobuf:"varint,5,opt,name=priority,proto3,enum=todo.Priority" json:"priority,omitempty"`
+	// Label *names*, not ids: lowercased, deduped and sorted by the server.
+	// The client never learns that labels have ids.
+	Labels        []string `protobuf:"bytes,6,rep,name=labels,proto3" json:"labels,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -125,6 +189,20 @@ func (x *Todo) GetCreatedAt() int64 {
 	return 0
 }
 
+func (x *Todo) GetPriority() Priority {
+	if x != nil {
+		return x.Priority
+	}
+	return Priority_PRIORITY_UNSPECIFIED
+}
+
+func (x *Todo) GetLabels() []string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
 type TodoList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Todos         []*Todo                `protobuf:"bytes,1,rep,name=todos,proto3" json:"todos,omitempty"`
@@ -170,8 +248,12 @@ func (x *TodoList) GetTodos() []*Todo {
 }
 
 type CreateTodoRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Title         string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Title string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	// Not `optional`: on a create there is no "leave unchanged", so proto3's
+	// absent-means-zero is already the right default.
+	Priority      Priority `protobuf:"varint,2,opt,name=priority,proto3,enum=todo.Priority" json:"priority,omitempty"`
+	Labels        []string `protobuf:"bytes,3,rep,name=labels,proto3" json:"labels,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -211,6 +293,20 @@ func (x *CreateTodoRequest) GetTitle() string {
 		return x.Title
 	}
 	return ""
+}
+
+func (x *CreateTodoRequest) GetPriority() Priority {
+	if x != nil {
+		return x.Priority
+	}
+	return Priority_PRIORITY_UNSPECIFIED
+}
+
+func (x *CreateTodoRequest) GetLabels() []string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
 }
 
 type ToggleTodoRequest struct {
@@ -257,6 +353,127 @@ func (x *ToggleTodoRequest) GetId() int64 {
 	return 0
 }
 
+// LabelList exists only to give a repeated field message presence in
+// UpdateTodoRequest — proto3 cannot mark a `repeated` field `optional`.
+type LabelList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Labels        []string               `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LabelList) Reset() {
+	*x = LabelList{}
+	mi := &file_todo_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LabelList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LabelList) ProtoMessage() {}
+
+func (x *LabelList) ProtoReflect() protoreflect.Message {
+	mi := &file_todo_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LabelList.ProtoReflect.Descriptor instead.
+func (*LabelList) Descriptor() ([]byte, []int) {
+	return file_todo_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *LabelList) GetLabels() []string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
+type UpdateTodoRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	// proto3 `optional` compiles to a synthetic oneof, and that is what carries
+	// presence on the wire. In Go these become *string / *Priority; in Node
+	// they are simply absent from the decoded object when unset.
+	//
+	// `optional` on priority is load-bearing rather than cosmetic: without it,
+	// setting a priority back to "none" (the zero value) would be
+	// indistinguishable from "don't touch priority".
+	Title         *string    `protobuf:"bytes,2,opt,name=title,proto3,oneof" json:"title,omitempty"`                           // absent = unchanged
+	Priority      *Priority  `protobuf:"varint,3,opt,name=priority,proto3,enum=todo.Priority,oneof" json:"priority,omitempty"` // absent = unchanged; present + UNSPECIFIED = clear
+	Labels        *LabelList `protobuf:"bytes,4,opt,name=labels,proto3" json:"labels,omitempty"`                               // absent = unchanged; present + empty = remove all
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateTodoRequest) Reset() {
+	*x = UpdateTodoRequest{}
+	mi := &file_todo_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateTodoRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateTodoRequest) ProtoMessage() {}
+
+func (x *UpdateTodoRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_todo_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateTodoRequest.ProtoReflect.Descriptor instead.
+func (*UpdateTodoRequest) Descriptor() ([]byte, []int) {
+	return file_todo_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *UpdateTodoRequest) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *UpdateTodoRequest) GetTitle() string {
+	if x != nil && x.Title != nil {
+		return *x.Title
+	}
+	return ""
+}
+
+func (x *UpdateTodoRequest) GetPriority() Priority {
+	if x != nil && x.Priority != nil {
+		return *x.Priority
+	}
+	return Priority_PRIORITY_UNSPECIFIED
+}
+
+func (x *UpdateTodoRequest) GetLabels() *LabelList {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
 type DeleteTodoRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -266,7 +483,7 @@ type DeleteTodoRequest struct {
 
 func (x *DeleteTodoRequest) Reset() {
 	*x = DeleteTodoRequest{}
-	mi := &file_todo_proto_msgTypes[5]
+	mi := &file_todo_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -278,7 +495,7 @@ func (x *DeleteTodoRequest) String() string {
 func (*DeleteTodoRequest) ProtoMessage() {}
 
 func (x *DeleteTodoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_todo_proto_msgTypes[5]
+	mi := &file_todo_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -291,7 +508,7 @@ func (x *DeleteTodoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTodoRequest.ProtoReflect.Descriptor instead.
 func (*DeleteTodoRequest) Descriptor() ([]byte, []int) {
-	return file_todo_proto_rawDescGZIP(), []int{5}
+	return file_todo_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *DeleteTodoRequest) GetId() int64 {
@@ -307,22 +524,40 @@ const file_todo_proto_rawDesc = "" +
 	"\n" +
 	"\n" +
 	"todo.proto\x12\x04todo\"\a\n" +
-	"\x05Empty\"i\n" +
+	"\x05Empty\"\xad\x01\n" +
 	"\x04Todo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x1c\n" +
 	"\tcompleted\x18\x03 \x01(\bR\tcompleted\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x04 \x01(\x03R\tcreatedAt\",\n" +
+	"created_at\x18\x04 \x01(\x03R\tcreatedAt\x12*\n" +
+	"\bpriority\x18\x05 \x01(\x0e2\x0e.todo.PriorityR\bpriority\x12\x16\n" +
+	"\x06labels\x18\x06 \x03(\tR\x06labels\",\n" +
 	"\bTodoList\x12 \n" +
 	"\x05todos\x18\x01 \x03(\v2\n" +
-	".todo.TodoR\x05todos\")\n" +
+	".todo.TodoR\x05todos\"m\n" +
 	"\x11CreateTodoRequest\x12\x14\n" +
-	"\x05title\x18\x01 \x01(\tR\x05title\"#\n" +
+	"\x05title\x18\x01 \x01(\tR\x05title\x12*\n" +
+	"\bpriority\x18\x02 \x01(\x0e2\x0e.todo.PriorityR\bpriority\x12\x16\n" +
+	"\x06labels\x18\x03 \x03(\tR\x06labels\"#\n" +
 	"\x11ToggleTodoRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\"#\n" +
+	"\tLabelList\x12\x16\n" +
+	"\x06labels\x18\x01 \x03(\tR\x06labels\"\xaf\x01\n" +
+	"\x11UpdateTodoRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x19\n" +
+	"\x05title\x18\x02 \x01(\tH\x00R\x05title\x88\x01\x01\x12/\n" +
+	"\bpriority\x18\x03 \x01(\x0e2\x0e.todo.PriorityH\x01R\bpriority\x88\x01\x01\x12'\n" +
+	"\x06labels\x18\x04 \x01(\v2\x0f.todo.LabelListR\x06labelsB\b\n" +
+	"\x06_titleB\v\n" +
+	"\t_priority\"#\n" +
 	"\x11DeleteTodoRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id2\xd1\x01\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id*a\n" +
+	"\bPriority\x12\x18\n" +
+	"\x14PRIORITY_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fPRIORITY_URGENT\x10\x01\x12\x11\n" +
+	"\rPRIORITY_HIGH\x10\x02\x12\x13\n" +
+	"\x0fPRIORITY_MEDIUM\x10\x032\x84\x02\n" +
 	"\vTodoService\x12(\n" +
 	"\tListTodos\x12\v.todo.Empty\x1a\x0e.todo.TodoList\x121\n" +
 	"\n" +
@@ -330,6 +565,9 @@ const file_todo_proto_rawDesc = "" +
 	".todo.Todo\x121\n" +
 	"\n" +
 	"ToggleTodo\x12\x17.todo.ToggleTodoRequest\x1a\n" +
+	".todo.Todo\x121\n" +
+	"\n" +
+	"UpdateTodo\x12\x17.todo.UpdateTodoRequest\x1a\n" +
 	".todo.Todo\x122\n" +
 	"\n" +
 	"DeleteTodo\x12\x17.todo.DeleteTodoRequest\x1a\v.todo.EmptyB\x14Z\x12todo-app/server/pbb\x06proto3"
@@ -346,30 +584,40 @@ func file_todo_proto_rawDescGZIP() []byte {
 	return file_todo_proto_rawDescData
 }
 
-var file_todo_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_todo_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_todo_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_todo_proto_goTypes = []any{
-	(*Empty)(nil),             // 0: todo.Empty
-	(*Todo)(nil),              // 1: todo.Todo
-	(*TodoList)(nil),          // 2: todo.TodoList
-	(*CreateTodoRequest)(nil), // 3: todo.CreateTodoRequest
-	(*ToggleTodoRequest)(nil), // 4: todo.ToggleTodoRequest
-	(*DeleteTodoRequest)(nil), // 5: todo.DeleteTodoRequest
+	(Priority)(0),             // 0: todo.Priority
+	(*Empty)(nil),             // 1: todo.Empty
+	(*Todo)(nil),              // 2: todo.Todo
+	(*TodoList)(nil),          // 3: todo.TodoList
+	(*CreateTodoRequest)(nil), // 4: todo.CreateTodoRequest
+	(*ToggleTodoRequest)(nil), // 5: todo.ToggleTodoRequest
+	(*LabelList)(nil),         // 6: todo.LabelList
+	(*UpdateTodoRequest)(nil), // 7: todo.UpdateTodoRequest
+	(*DeleteTodoRequest)(nil), // 8: todo.DeleteTodoRequest
 }
 var file_todo_proto_depIdxs = []int32{
-	1, // 0: todo.TodoList.todos:type_name -> todo.Todo
-	0, // 1: todo.TodoService.ListTodos:input_type -> todo.Empty
-	3, // 2: todo.TodoService.CreateTodo:input_type -> todo.CreateTodoRequest
-	4, // 3: todo.TodoService.ToggleTodo:input_type -> todo.ToggleTodoRequest
-	5, // 4: todo.TodoService.DeleteTodo:input_type -> todo.DeleteTodoRequest
-	2, // 5: todo.TodoService.ListTodos:output_type -> todo.TodoList
-	1, // 6: todo.TodoService.CreateTodo:output_type -> todo.Todo
-	1, // 7: todo.TodoService.ToggleTodo:output_type -> todo.Todo
-	0, // 8: todo.TodoService.DeleteTodo:output_type -> todo.Empty
-	5, // [5:9] is the sub-list for method output_type
-	1, // [1:5] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	0,  // 0: todo.Todo.priority:type_name -> todo.Priority
+	2,  // 1: todo.TodoList.todos:type_name -> todo.Todo
+	0,  // 2: todo.CreateTodoRequest.priority:type_name -> todo.Priority
+	0,  // 3: todo.UpdateTodoRequest.priority:type_name -> todo.Priority
+	6,  // 4: todo.UpdateTodoRequest.labels:type_name -> todo.LabelList
+	1,  // 5: todo.TodoService.ListTodos:input_type -> todo.Empty
+	4,  // 6: todo.TodoService.CreateTodo:input_type -> todo.CreateTodoRequest
+	5,  // 7: todo.TodoService.ToggleTodo:input_type -> todo.ToggleTodoRequest
+	7,  // 8: todo.TodoService.UpdateTodo:input_type -> todo.UpdateTodoRequest
+	8,  // 9: todo.TodoService.DeleteTodo:input_type -> todo.DeleteTodoRequest
+	3,  // 10: todo.TodoService.ListTodos:output_type -> todo.TodoList
+	2,  // 11: todo.TodoService.CreateTodo:output_type -> todo.Todo
+	2,  // 12: todo.TodoService.ToggleTodo:output_type -> todo.Todo
+	2,  // 13: todo.TodoService.UpdateTodo:output_type -> todo.Todo
+	1,  // 14: todo.TodoService.DeleteTodo:output_type -> todo.Empty
+	10, // [10:15] is the sub-list for method output_type
+	5,  // [5:10] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_todo_proto_init() }
@@ -377,18 +625,20 @@ func file_todo_proto_init() {
 	if File_todo_proto != nil {
 		return
 	}
+	file_todo_proto_msgTypes[6].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_todo_proto_rawDesc), len(file_todo_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   6,
+			NumEnums:      1,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_todo_proto_goTypes,
 		DependencyIndexes: file_todo_proto_depIdxs,
+		EnumInfos:         file_todo_proto_enumTypes,
 		MessageInfos:      file_todo_proto_msgTypes,
 	}.Build()
 	File_todo_proto = out.File

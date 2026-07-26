@@ -5,6 +5,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
+    "prestart": "npm run build:css",
     "start": "node server.js",
     "build:css": "tailwindcss -i src/input.css -o public/output.css",
     "watch:css": "tailwindcss -i src/input.css -o public/output.css --watch"

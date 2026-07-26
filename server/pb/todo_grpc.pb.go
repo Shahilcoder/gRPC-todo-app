@@ -22,6 +22,7 @@ const (
 	TodoService_ListTodos_FullMethodName  = "/todo.TodoService/ListTodos"
 	TodoService_CreateTodo_FullMethodName = "/todo.TodoService/CreateTodo"
 	TodoService_ToggleTodo_FullMethodName = "/todo.TodoService/ToggleTodo"
+	TodoService_UpdateTodo_FullMethodName = "/todo.TodoService/UpdateTodo"
 	TodoService_DeleteTodo_FullMethodName = "/todo.TodoService/DeleteTodo"
 )
 
@@ -30,11 +31,18 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // TodoService is the full surface of the todo app.
-// Four RPCs are enough to drive the UI: list, create, toggle, delete.
+// List, create, toggle, update, delete — all unary, no streaming.
+//
+// ToggleTodo stays separate from UpdateTodo even though both write a row:
+// toggling is *relative* ("flip whatever it is now") and happens in one SQL
+// statement, while updating is *absolute* ("set it to this"). Folding
+// `completed` into UpdateTodo would force the client to send the current value
+// and reintroduce a lost-update race the flip is immune to.
 type TodoServiceClient interface {
 	ListTodos(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*TodoList, error)
 	CreateTodo(ctx context.Context, in *CreateTodoRequest, opts ...grpc.CallOption) (*Todo, error)
 	ToggleTodo(ctx context.Context, in *ToggleTodoRequest, opts ...grpc.CallOption) (*Todo, error)
+	UpdateTodo(ctx context.Context, in *UpdateTodoRequest, opts ...grpc.CallOption) (*Todo, error)
 	DeleteTodo(ctx context.Context, in *DeleteTodoRequest, opts ...grpc.CallOption) (*Empty, error)
 }
 
@@ -76,6 +84,16 @@ func (c *todoServiceClient) ToggleTodo(ctx context.Context, in *ToggleTodoReques
 	return out, nil
 }
 
+func (c *todoServiceClient) UpdateTodo(ctx context.Context, in *UpdateTodoRequest, opts ...grpc.CallOption) (*Todo, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Todo)
+	err := c.cc.Invoke(ctx, TodoService_UpdateTodo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *todoServiceClient) DeleteTodo(ctx context.Context, in *DeleteTodoRequest, opts ...grpc.CallOption) (*Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Empty)
@@ -91,11 +109,18 @@ func (c *todoServiceClient) DeleteTodo(ctx context.Context, in *DeleteTodoReques
 // for forward compatibility.
 //
 // TodoService is the full surface of the todo app.
-// Four RPCs are enough to drive the UI: list, create, toggle, delete.
+// List, create, toggle, update, delete — all unary, no streaming.
+//
+// ToggleTodo stays separate from UpdateTodo even though both write a row:
+// toggling is *relative* ("flip whatever it is now") and happens in one SQL
+// statement, while updating is *absolute* ("set it to this"). Folding
+// `completed` into UpdateTodo would force the client to send the current value
+// and reintroduce a lost-update race the flip is immune to.
 type TodoServiceServer interface {
 	ListTodos(context.Context, *Empty) (*TodoList, error)
 	CreateTodo(context.Context, *CreateTodoRequest) (*Todo, error)
 	ToggleTodo(context.Context, *ToggleTodoRequest) (*Todo, error)
+	UpdateTodo(context.Context, *UpdateTodoRequest) (*Todo, error)
 	DeleteTodo(context.Context, *DeleteTodoRequest) (*Empty, error)
 	mustEmbedUnimplementedTodoServiceServer()
 }
@@ -115,6 +140,9 @@ func (UnimplementedTodoServiceServer) CreateTodo(context.Context, *CreateTodoReq
 }
 func (UnimplementedTodoServiceServer) ToggleTodo(context.Context, *ToggleTodoRequest) (*Todo, error) {
 	return nil, status.Error(codes.Unimplemented, "method ToggleTodo not implemented")
+}
+func (UnimplementedTodoServiceServer) UpdateTodo(context.Context, *UpdateTodoRequest) (*Todo, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateTodo not implemented")
 }
 func (UnimplementedTodoServiceServer) DeleteTodo(context.Context, *DeleteTodoRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteTodo not implemented")
@@ -194,6 +222,24 @@ func _TodoService_ToggleTodo_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TodoService_UpdateTodo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateTodoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TodoServiceServer).UpdateTodo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TodoService_UpdateTodo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TodoServiceServer).UpdateTodo(ctx, req.(*UpdateTodoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _TodoService_DeleteTodo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeleteTodoRequest)
 	if err := dec(in); err != nil {
@@ -230,6 +276,10 @@ var TodoService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ToggleTodo",
 			Handler:    _TodoService_ToggleTodo_Handler,
+		},
+		{
+			MethodName: "UpdateTodo",
+			Handler:    _TodoService_UpdateTodo_Handler,
 		},
 		{
 			MethodName: "DeleteTodo",

@@ -5,21 +5,47 @@ package todo;
 option go_package = "todo-app/server/pb";
 
 // TodoService is the full surface of the todo app.
-// Four RPCs are enough to drive the UI: list, create, toggle, delete.
+// List, create, toggle, update, delete — all unary, no streaming.
+//
+// ToggleTodo stays separate from UpdateTodo even though both write a row:
+// toggling is *relative* ("flip whatever it is now") and happens in one SQL
+// statement, while updating is *absolute* ("set it to this"). Folding
+// `completed` into UpdateTodo would force the client to send the current value
+// and reintroduce a lost-update race the flip is immune to.
 service TodoService {
   rpc ListTodos   (Empty)              returns (TodoList);
   rpc CreateTodo  (CreateTodoRequest)  returns (Todo);
   rpc ToggleTodo  (ToggleTodoRequest)  returns (Todo);
+  rpc UpdateTodo  (UpdateTodoRequest)  returns (Todo);
   rpc DeleteTodo  (DeleteTodoRequest)  returns (Empty);
+}
+
+// Priority tiers, most urgent first.
+//
+// The zero value IS the design system's tier 4. DESIGN.md calls tier 4 "None —
+// the default" and says the default state "should be silent", which is exactly
+// proto3's absent-means-zero semantics; wire values 1/2/3 then line up with
+// design tiers 1/2/3. Adding a separate PRIORITY_NONE = 4 would give two wire
+// values for one meaning, each needing canonicalising in the server, the
+// database, and every comparison.
+enum Priority {
+  PRIORITY_UNSPECIFIED = 0; // design tier 4 — no priority; renders nothing
+  PRIORITY_URGENT      = 1; // design tier 1 — do it today
+  PRIORITY_HIGH        = 2; // design tier 2 — this week
+  PRIORITY_MEDIUM      = 3; // design tier 3 — scheduled
 }
 
 message Empty {}
 
 message Todo {
-  int64  id         = 1;
-  string title      = 2;
-  bool   completed  = 3;
-  int64  created_at = 4; // unix seconds
+  int64    id         = 1;
+  string   title      = 2;
+  bool     completed  = 3;
+  int64    created_at = 4; // unix seconds
+  Priority priority   = 5;
+  // Label *names*, not ids: lowercased, deduped and sorted by the server.
+  // The client never learns that labels have ids.
+  repeated string labels = 6;
 }
 
 message TodoList {
@@ -27,11 +53,35 @@ message TodoList {
 }
 
 message CreateTodoRequest {
-  string title = 1;
+  string   title    = 1;
+  // Not `optional`: on a create there is no "leave unchanged", so proto3's
+  // absent-means-zero is already the right default.
+  Priority priority = 2;
+  repeated string labels = 3;
 }
 
 message ToggleTodoRequest {
   int64 id = 1;
+}
+
+// LabelList exists only to give a repeated field message presence in
+// UpdateTodoRequest — proto3 cannot mark a `repeated` field `optional`.
+message LabelList {
+  repeated string labels = 1;
+}
+
+message UpdateTodoRequest {
+  int64 id = 1;
+  // proto3 `optional` compiles to a synthetic oneof, and that is what carries
+  // presence on the wire. In Go these become *string / *Priority; in Node
+  // they are simply absent from the decoded object when unset.
+  //
+  // `optional` on priority is load-bearing rather than cosmetic: without it,
+  // setting a priority back to "none" (the zero value) would be
+  // indistinguishable from "don't touch priority".
+  optional string   title    = 2; // absent = unchanged
+  optional Priority priority = 3; // absent = unchanged; present + UNSPECIFIED = clear
+  LabelList         labels   = 4; // absent = unchanged; present + empty = remove all
 }
 
 message DeleteTodoRequest {

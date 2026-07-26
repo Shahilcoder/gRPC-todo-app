@@ -353,7 +353,7 @@ components:
     backgroundColor: "{colors.canvas-dark}"
     textColor: "{colors.ink-faint-dark}"
     typography: "{typography.body-sm}"
-  # ---- Priority flag (phase 2) ---------------------------------------------
+  # ---- Priority flag --------------------------------------------------------
   priority-flag-1:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.priority-1}"
@@ -394,7 +394,7 @@ components:
     textColor: "{colors.priority-4-dark}"
     rounded: "{rounded.sm}"
     size: "{spacing.lg}"
-  # ---- Label chip (phase 2) ------------------------------------------------
+  # ---- Label chip -----------------------------------------------------------
   label-chip:
     backgroundColor: "{colors.primary-wash}"
     textColor: "{colors.primary}"
@@ -456,16 +456,21 @@ each role in the spec's bold-lead convention:
 
 ### Build phases
 
-The app's data model is currently four fields (`id`, `title`, `completed`,
-`created_at`) behind four unary RPCs (`ListTodos`, `CreateTodo`, `ToggleTodo`,
-`DeleteTodo`) — see `proto/todo.proto`. Some of what a mature task app needs
-visually has no backing data yet, so every component in `## Components` carries
-a status marker:
+The app's data model is six fields (`id`, `title`, `completed`, `created_at`,
+`priority`, `labels`) behind five unary RPCs (`ListTodos`, `CreateTodo`,
+`ToggleTodo`, `UpdateTodo`, `DeleteTodo`) — see `proto/todo.proto`. Every
+component in `## Components` carries a status marker:
 
-- **Buildable now** — drivable by the existing four RPCs and four fields.
+- **Buildable now** — drivable by the existing RPCs and fields.
 - **Phase 2** — requires proto and schema changes first. Tokens are defined so
   the visual language is settled in advance, but nothing should ship using them
   until the data exists.
+
+**Nothing is currently phase 2.** The priority flag and the label chip were,
+until `priority` and `labels` were added to the proto along with a schema
+migration and `UpdateTodo`; both are now buildable and built. The marker stays
+documented because it is the process rule, not because anything is waiting on
+it.
 
 ### Originality
 
@@ -522,8 +527,8 @@ constantly and marks "done", so it should feel like a confirmation rather than
 an alert. Clay is a red-brown at moderate saturation: it belongs to the same
 warm family as the neutral ramp (so the UI reads as one material), it is
 unmistakably not the crimson of the reference app, and it is a deliberate step
-away from the stock indigo currently hard-coded in
-`client/public/index.html`. At `#A63D2F` it clears AA on every surface in the
+away from the stock indigo that `client/public/index.html` used to hard-code.
+At `#A63D2F` it clears AA on every surface in the
 system while still being dark enough to carry white text — a combination a
 brighter red cannot manage in both directions at once.
 
@@ -734,9 +739,9 @@ The task list is capped at **`content-max` (42rem / 672px)** and centered.
 This is a reading-column decision, not a stylistic one: task titles are prose,
 and prose past roughly 75 characters per line loses the reader between the end
 of one line and the start of the next. A full-width task list on a 27-inch
-display is unusable in exactly this way. Note that the current
-`client/public/index.html` uses `max-w-xl` (36rem); `content-max` widens it to
-42rem, which fits a realistic title plus its metadata without wrapping.
+display is unusable in exactly this way. `client/public/index.html` used to cap
+at `max-w-xl` (36rem); `content-max` widened it to 42rem, which fits a realistic
+title plus its metadata without wrapping.
 
 **`sidebar` (16rem) is reserved and unused.** It is specified now so that
 phase-2 navigation (projects, filters, labels) does not have to reopen the
@@ -866,13 +871,17 @@ specified in prose here and marked as such.
 
 ### 1. Task row — *buildable now*
 
-The core unit. Backed by `Todo.id`, `Todo.title`, `Todo.completed`,
-`Todo.created_at`.
+The core unit. Backed by every field on `Todo`.
 
 **Anatomy**, left to right: a 20px circular checkbox (44px hit area) · 8px gap ·
 the title in `body-lg`, flexible width, truncating at one line by default ·
-optional `label-sm` timestamp from `created_at` · a trailing delete action.
-Vertical padding `md` (12px); resting height `row-height` (48px).
+optional `label-sm` timestamp from `created_at` · the priority flag at the
+trailing edge · a delete action. Label chips, when the task has any, sit on a
+second line beneath the title. Vertical padding `md` (12px); resting height
+`row-height` (48px).
+
+Below 640px the timestamp is dropped and the delete action stops being
+hover-revealed — there is no hover on touch.
 
 **States**
 
@@ -892,8 +901,12 @@ it, because a row vanishing instantly makes the list appear to jump.
 
 **Notes.** Rows are separated by `list-divider`, not by gaps. Title truncates
 at one line by default; wrapping to two is acceptable, three is not — the row
-stops being scannable. There is no edit-title RPC today, so **the title is not
-inline-editable**; do not build an affordance that implies it is.
+stops being scannable. `UpdateTodo` exists, so **the title is inline-editable**:
+the title is itself the edit trigger, Enter commits and Esc cancels.
+
+Where a row carries labels, the chips take a second line beneath the title
+rather than competing with it for the first. A row without labels stays exactly
+`row-height`, so the default list keeps its density.
 
 ### 2. Checkbox — *buildable now*
 
@@ -918,9 +931,12 @@ border sub-token, so the ring's color is carried as that element's
 checkmark path draws over the following 80ms. Unchecking reverses without the
 draw. This is the app's one moment of expressive motion, and it is 200ms long.
 
-**Phase 2.** When priorities exist, the ring takes the task's `priority-N`
-color and the fill uses a wash of it — the pattern this palette's four tiers
-were designed for. Until then every ring is `border-interactive`.
+**An available refinement.** Now that `Todo.priority` exists, the ring could
+take the task's `priority-N` color with the fill in a wash of it — the pattern
+this palette's four tiers were designed for. The shipped checkbox does not do
+this: every ring is `border-interactive`, and the tier is carried by the row's
+priority flag instead. Tinting the ring as well would spend the tier's color
+twice on one row.
 
 ### 3. Add-task input — *buildable now*
 
@@ -956,7 +972,7 @@ Three variants. **At most one `button-primary` is visible per screen.**
 | Ghost | `button-ghost` (`canvas` / `ink-muted`, no border, `label-md`) | `button-ghost-hover` | — | Row actions, low-emphasis controls |
 
 `button-ghost-danger` (`error` text on `surface`) is the destructive ghost —
-the row's Delete action, which `client/public/app.js` renders today as a
+the row's Delete action, which the old `client/public/app.js` rendered as a
 `<button>` carrying `text-rose-600`. Destructive actions are **never**
 `button-primary`: a filled red button invites the click it is warning about.
 
@@ -978,8 +994,8 @@ non-visual and color-blind access.
 
 ### 6. Empty state — *buildable now*
 
-Shown when `ListTodos` returns zero todos. Today `app.js` toggles a
-`hidden` class on a one-line "No todos yet."
+Shown when `ListTodos` returns zero todos. The old `app.js` toggled a `hidden`
+class on a one-line "No todos yet." — one message for all three cases below.
 
 `empty-state` — a `rounded.xl` panel on `canvas`, `3xl` (48px) padding,
 centered. A `headline-md` line in `ink-muted` and one `body-sm` line in
@@ -1012,12 +1028,12 @@ where they collide with the container's own edge. The container's `rounded.lg`
 clips the first and last rows' corners, which is why rows can carry `rounded.md`
 without the two radii fighting.
 
-### 9. Priority flag — *phase 2, blocked on proto changes*
+### 9. Priority flag — *buildable now*
 
-> **Blocked.** `proto/todo.proto` has no priority field, and `server/store.go`
-> has no column for one. This requires a new field on `Todo`, a schema
-> migration, and an RPC that can set it. **Do not ship this component.** Its
-> tokens are defined so the color language is settled before that work starts.
+Backed by `Todo.priority`, set on create and changed with `UpdateTodo`. The
+wire enum's zero value (`PRIORITY_UNSPECIFIED`) *is* tier 4: proto3 requires
+the default to be zero, and "no priority" is the default state, so the two
+ideas coincide. Wire values 1–3 line up with tiers 1–3.
 
 `priority-flag-1` … `priority-flag-4` — a 16px flag or chevron at
 `rounded.sm`, colored by tier, placed at the row's trailing edge. Tier 4 (the
@@ -1028,11 +1044,11 @@ Always pair the color with a text label or a distinct glyph. Four hues is a
 usable ramp for most people and no ramp at all for someone who cannot separate
 them.
 
-### 10. Label chip — *phase 2, blocked on proto changes*
+### 10. Label chip — *buildable now*
 
-> **Blocked.** There is no label or tag field in the proto, and no join table
-> in SQLite. Requires a repeated field on `Todo` plus schema and RPC work.
-> **Do not ship this component.**
+Backed by `Todo.labels` — label *names*, normalised into a `labels` table and
+a `todo_labels` join table behind the RPC. Labels are entered as inline `#tag`
+tokens parsed out of the title field, with a live chip preview in the composer.
 
 `label-chip` — a `rounded.full` pill, `primary-wash` background, `primary`
 text, `label-sm`, `xs` padding. Optional trailing dismiss affordance. Chips sit
@@ -1092,8 +1108,8 @@ the title out of view.
 
 - Do mark any component that needs proto or schema changes as phase 2, and
   don't ship it against invented data.
-- Don't add a visual affordance for an action the API cannot perform — there is
-  no edit-title RPC, so nothing should look editable.
+- Don't add a visual affordance for an action the API cannot perform. Every
+  affordance in the current UI has an RPC behind it; a new one needs the same.
 - Do run `npx @google/design.md lint client/DESIGN.md` after editing this file.
 
 ## Implementation Tokens
@@ -1234,9 +1250,9 @@ gives no other way to express a second theme.
 
 ### `tailwind.config.js` — `theme.extend`
 
-Drop-in replacement for the empty `theme: { extend: {} }` currently in
-`client/tailwind.config.js`. Add `darkMode: "class"` so the `.dark` block
-above is what toggles the theme.
+This is what `client/tailwind.config.js` now contains, in place of the empty
+`theme: { extend: {} }` it started with. `darkMode: "class"` is what makes the
+`.dark` block above the theme switch.
 
 ```js
 /** @type {import('tailwindcss').Config} */
@@ -1341,9 +1357,16 @@ colliding with it.
 
 ### Migrating today's classes
 
-How the stock Tailwind utilities currently in `client/public/index.html` and
-`client/public/app.js` map onto these tokens. This table is the migration
-checklist; **no source file has been changed by this document.**
+How the stock Tailwind utilities that *used to be* in `client/public/index.html`
+and `client/public/app.js` map onto these tokens.
+
+**This migration has been carried out.** Every row below is now the state of the
+source, not a proposal: `client/tailwind.config.js` consumes the `theme.extend`
+block above, `client/src/input.css` defines the custom properties, and the
+markup and behaviour were rewritten against them. `public/app.js` no longer
+exists as a single file — it was split into ES modules under `public/js/`, so
+the `app.js` rows below refer to the row-rendering code now in
+`public/js/row.js`. The table is kept as the record of what changed and why.
 
 | Where | Today | Becomes | Why |
 |---|---|---|---|
