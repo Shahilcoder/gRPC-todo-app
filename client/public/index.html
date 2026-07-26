@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>gRPC Todo</title>
+  <link rel="stylesheet" href="/output.css" />
+</head>
+<body class="min-h-screen bg-slate-100 text-slate-800">
+  <main class="mx-auto max-w-xl p-6">
+    <header class="mb-6">
+      <h1 class="text-3xl font-bold tracking-tight">Todos</h1>
+      <p class="text-sm text-slate-500">Browser → Express → gRPC → Go → SQLite</p>
+    </header>
+
+    <form id="add-form" class="mb-6 flex gap-2">
+      <input
+        id="title"
+        type="text"
+        placeholder="What needs doing?"
+        class="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 shadow-sm
+               focus:outline-none focus:ring-2 focus:ring-indigo-400"
+        autocomplete="off"
+        required
+      />
+      <button
+        type="submit"
+        class="rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white
+               hover:bg-indigo-700 active:bg-indigo-800"
+      >
+        Add
+      </button>
+    </form>
+
+    <ul id="todo-list" class="space-y-2"></ul>
+    <p id="empty-state" class="hidden text-center text-slate-400">No todos yet.</p>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

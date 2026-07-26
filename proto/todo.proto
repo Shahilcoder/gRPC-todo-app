@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package todo;
+
+option go_package = "todo-app/server/pb";
+
+// TodoService is the full surface of the todo app.
+// Four RPCs are enough to drive the UI: list, create, toggle, delete.
+service TodoService {
+  rpc ListTodos   (Empty)              returns (TodoList);
+  rpc CreateTodo  (CreateTodoRequest)  returns (Todo);
+  rpc ToggleTodo  (ToggleTodoRequest)  returns (Todo);
+  rpc DeleteTodo  (DeleteTodoRequest)  returns (Empty);
+}
+
+message Empty {}
+
+message Todo {
+  int64  id         = 1;
+  string title      = 2;
+  bool   completed  = 3;
+  int64  created_at = 4; // unix seconds
+}
+
+message TodoList {
+  repeated Todo todos = 1;
+}
+
+message CreateTodoRequest {
+  string title = 1;
+}
+
+message ToggleTodoRequest {
+  int64 id = 1;
+}
+
+message DeleteTodoRequest {
+  int64 id = 1;
+}
